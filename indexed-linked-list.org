@@ -1,0 +1,450 @@
+#+TITLE: Indexed Linked List
+#+DATE: <2020-08-05 mié>
+#+AUTHOR: José Jorge Rodríguez Salgado
+#+EMAIL: josejorgexl@gmail.com
+#+OPTIONS: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline
+#+OPTIONS: author:t c:nil creator:comment d:(not "LOGBOOK") date:t
+#+OPTIONS: e:t email:t f:t inline:t num:t p:nil pri:nil stat:t
+#+OPTIONS: tags:t tasks:t tex:t timestamp:t toc:nil todo:t |:t
+#+CREATOR: Emacs 25.2.2 (Org mode 8.2.10)
+#+DESCRIPTION: A data structure named Indexed Linked List that allow to insert, remove and read in O(sqrt(N)) operations
+#+EXCLUDE_TAGS: noexport
+#+KEYWORDS: Data structure, list, linked list, runtime complexity
+#+LANGUAGE: en
+#+SELECT_TAGS: export
+
+* Introduction
+
+Common lists or arrays are widely used to store data in a sequential fashion that allows us to read that data in constant time.
+But inserting a new piece of data in the middle of the list takes O(N) operations where N is the amount of elements in the list.
+
+Linked list, one the other hand, are made of nodes that contains the pieces of data and a connection to the next node in the list.
+With this approach we can insert in the middle of the list in constant time (once we have the node we want to insert the new node after),
+but the read operation takes O(N) operations.
+
+We want to combine the features of both data structures to make read, delete and insert operations in O(sqrt(N)).
+
+* List node
+
+** documentation
+Part of the structure is a linked list of nodes taht contains data and a reference to the next and previous nodes in the list
+
+** code
+
+#+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp 
+(defclass ill-node ()
+    ((content :accessor content :initarg :content)
+     (next :accessor next :initarg :next :initform nil)
+     (prev :accessor prev :initarg :prev :initform nil)))
+
+(defun ill-node (content next prev)
+   (make-instance 'ill-node  :content content :next next :prev prev))
+#+END_SRC
+
+** test
+
+#+BEGIN_SRC lisp +n -r :results output :exports code :tangle src/indexed-linked-list.test.lisp 
+(let ((node1 (il-node 1 nil nil))
+      (node2 (il-node 2 nil nil))
+      (node3 (il-node 3 nil nil)))
+    (progn
+        (setf (next node1) node2)
+        (setf (prev node2) node1)
+        (setf (prev node3) node2)
+        (setf (next node2) node3)
+        (format t "NODE 1:~%  CONTENT: ~A~%  PREV: ~A~%  NEXT: ~A~%" (content node1) (prev node1) (content (next node1)))
+        (format t "NODE 2:~%  CONTENT: ~A~%  PREV: ~A~%  NEXT: ~A~%" (content node2) (content (prev node2)) (content (next node2)))
+        (format t "NODE 3:~%  CONTENT: ~A~%  PREV: ~A~%  NEXT: ~A~%" (content node3) (content(prev node3)) (next node3))))
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+NODE 1:
+  CONTENT: 1
+  PREV: NIL
+  NEXT: 2
+NODE 2:
+  CONTENT: 2
+  PREV: 1
+  NEXT: 3
+NODE 3:
+  CONTENT: 3
+  PREV: 2
+  NEXT: NIL
+#+end_example
+* Indexed Linked List
+
+** documentation
+Now we define the structure. It will be a class the length of the list, a list of selected nodes, a head (first element of the list) and
+a tail (last element of the list). The idea is to select every sqrt(N) node.
+We don't define the constructor here, we'll define it once the insert method were defined. 
+** code
+
+#+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp
+(defclass indexed-linked-list ()
+   ((selected-nodes :initform nil :accessor selected-nodes)
+    (ill-length :initform 0 :accessor ill-length)
+    (head :initform nil :accessor head)
+    (tail :initform nil :accessor tail)))
+#+END_SRC
+* Utils
+** documentation
+Before implementing the data structure operations (/insert/, /get/, /remove/, etc) we need to implement some methods
+that are used in those operations.
+** second grade positive root
+*** documentation
+In some point we'll need to found the greater integer =K= such that the sum of the first =K= even numbers is smaller
+than =A=. The sum of the first =K= even numbers is =K^2 + K= so we'll need to find the positive root of the ecuation
+=K^2 + K - A = 0= and get its integer part. Since =A= is always positive, the positive root of the ecuation is the one
+that has the discriminant with a positive sign.
+
+*** code
+#+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp 
+(defun integer-positive-root (a)
+    (let ((K1 (/ (+ -1 (sqrt (+ 1 (* 4 a)))) 2))) 
+         (floor K1)))
+#+END_SRC
+*** test
+#+BEGIN_SRC lisp +n -r :results output :exports both :tangle src/indexed-linked-list.test.lisp
+(progn
+     (format t "FOR a = 1 sould be 0: ~A~%" (integer-positive-root 1))
+     (format t "FOR a = 2 sould be 1: ~A~%" (integer-positive-root 2))
+     (format t "FOR a = 7 sould be 2: ~A~%" (integer-positive-root 7))
+     (format t "FOR a = 15 sould be 3: ~A~%" (integer-positive-root 15)))
+#+END_SRC
+
+#+RESULTS:
+: FOR a = 1 sould be 0: 0
+: FOR a = 2 sould be 1: 1
+: FOR a = 7 sould be 2: 2
+: FOR a = 15 sould be 3: 3
+
+** update selected nodes list cause insertion
+*** documentation
+When a new node is inserted and the linked list has a length that have a sqrt greater than the sqrt of the previous
+length is necessary to add a new node in the selected node list and every node in the selected list become in its successor.
+
+*** code
+#+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp
+(defun update-selected-list-insertion (ill new-node)
+   (progn
+        (setf (selected-nodes ill) (mapcar #'next (selected-nodes ill)))
+        (setf (selected-nodes ill) (append (selected-nodes ill) 
+                                           `(,new-node)))))
+
+#+END_SRC
+** update selected nodes list cause deletion
+*** documentation
+After removing an element could be necessary update the selected nodes list.
+*** code
+#+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp
+(defun update-selected-list-deletion (ill)
+    (progn
+       (setf (selected-nodes ill) (butlast (selected-nodes ill)))
+       (if (selected-nodes ill)
+           (setf (selected-nodes ill) (mapcar #'prev (selected-nodes ill))))))
+#+END_SRC
+** next and prev N times
+*** documentation
+Sometimes we need to traverse the list making =next= or =prev= operation multiple times from node to node. This is a shortcut
+to make theese operations.
+
+*** code
+#+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp 
+(defun nextn (node n)
+    (let ((new-node node))
+         (progn 
+             (loop for i from 0 below n
+                 do (setf new-node (next new-node)))
+             new-node)))
+
+(defun prevn (node n)
+    (let ((new-node node))
+         (progn 
+             (loop for i from 0 below n
+                 do (setf new-node (prev new-node)))
+             new-node))) 
+#+END_SRC
+
+*** test
+#+BEGIN_SRC lisp +n -r :results output :exports both :tangle src/indexed-linked-list.test.lisp 
+(let ((ill (indexed-linked-list 1 2 3 4 5 6)))
+         (format t "SHOULD BE 2: ~A~%" (content (prevn (nextn (first (selected-nodes ill)) 3) 3))))
+#+END_SRC
+
+#+RESULTS:
+: SHOULD BE 2: 2
+
+** print ILL
+*** documentation
+A method to print ILLs
+*** code
+#+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp 
+(defun print-ill (ill)
+    (let ((curr (head ill)))
+         (progn
+             (format t "( ")
+             (loop while curr
+                   do (format t "~A " (content curr))
+                      (setf curr (next curr)))
+             (format t ")~%"))))
+#+END_SRC
+
+* Insert, remove and get methods
+** documentation
+Now we define the insert, remove and get methods for the ILL data structure. All those operations will be done in O(sqrt(N)).
+
+** insert
+*** documentation
+The insert operation has two arguments: the ILL and the data to insert in that ILL. It appends a new node that has the new data as its content and is located at the end of the list.
+We define the constructor of the =indexed-linked-list-class= right after the =insert= method. As we maintain a list with sqrt(N) nodes we must verify that the growth of the list
+maintains the invariant
+*** code
+#+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp
+(defgeneric insert (ill content))
+
+(defmethod insert ((ill indexed-linked-list) (content t))
+    (let* ((len (ill-length ill))
+           (sq-len (floor (sqrt len)))
+           (new-node (ill-node content nil nil)))
+          
+          (if (eq len 0)
+              (progn
+                   (setf (selected-nodes ill) (append (selected-nodes ill) `(,new-node)))
+                   (incf (ill-length ill) 1)
+                   (setf (head ill) new-node)
+                   (setf (tail ill) new-node))
+              (let*
+                  ((last-node (first (last (selected-nodes ill))))
+                   (aux (next last-node)))
+                  
+                  (progn
+                     (loop while aux
+                          do (setf last-node aux)
+                             (setf aux (next last-node)))
+              
+                     (setf (next last-node) new-node)
+                     (setf (prev new-node) last-node)
+                     (incf (ill-length ill) 1)
+                     (setf (tail ill) new-node)
+                     (if (> (floor (sqrt (ill-length ill))) sq-len)
+                         (update-selected-list-insertion ill new-node)))))))
+
+(defun indexed-linked-list (&rest elems)
+    (let ((ill (make-instance `indexed-linked-list)))
+         (progn
+            (loop for elem in elems
+               do (insert ill elem))
+            ill)))
+#+END_SRC
+
+*** test
+
+#+BEGIN_SRC lisp +n -r :results output :exports code :tangle src/indexed-linked-list.test.lisp
+(let ((ill (indexed-linked-list 1 2 3)))
+     
+     (progn
+         (format t "~A~%" (content (next (first (selected-nodes ill)))))
+         (insert ill 4)
+         (format t "~A~%" (selected-nodes ill))
+         (format t "~A~%" (content (prev (first (selected-nodes ill)))))
+         (format t "~A~%" (content (next (first (selected-nodes ill))))))
+         (format t "~A~%" (content (next (next (first (selected-nodes ill)))))))
+#+END_SRC
+
+#+RESULTS:
+: 2
+: (#<ILL-NODE {1003458803}> #<ILL-NODE {1003458883}>)
+: 1
+: 3
+: 4
+** get
+*** documentation
+Get method has two two parameters: the list and the index that we want to get from the list. Takes O(sqrt(N)) operations.
+This method return the node in that index, so to get the value you need to do =(content (get-at ill 5))=
+*** code
+#+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp 
+(defgeneric get-at (ill index))
+
+(defmethod get-at ((ill indexed-linked-list) index)
+    (let ((first-idx (- (floor (sqrt (ill-length ill))) 1))
+          (first-node (first (selected-nodes ill))))
+
+         (if (or (< index 0) (> index (- (ill-length ill) 1)))
+             nil
+             (if (<= index first-idx)
+                 (prevn first-node (- first-idx index))
+                 (let* ((idx (- index first-idx))
+                        (target-k (integer-positive-root idx))
+                        (target-idx (+ (* target-k target-k) target-k first-idx))
+                        (target (- index target-idx)))
+                       (nextn (car (nthcdr target-k (selected-nodes ill))) target))))))
+                   
+#+END_SRC
+
+*** test
+#+BEGIN_SRC lisp +n -r :results output :exports both :tangle src/indexed-linked-list.test.lisp 
+(let ((ill (indexed-linked-list 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17)))
+     (progn
+         (format t "SHOULD BE 1: ~A~%"  (content (get-at ill 0)))
+         (format t "SHOULD BE 5: ~A~%"  (content (get-at ill 4)))
+         (format t "SHOULD BE 9: ~A~%"  (content (get-at ill 8)))
+         (format t "SHOULD BE 13: ~A~%" (content  (get-at ill 12)))
+         (format t "SHOULD BE 17: ~A~%" (content  (get-at ill 16)))))
+#+END_SRC
+
+#+RESULTS:
+: SHOULD BE 1: 1
+: SHOULD BE 5: 5
+: SHOULD BE 9: 9
+: SHOULD BE 13: 13
+: SHOULD BE 17: 17
+
+** insert-before and insert-after
+*** documentation
+The power of this data structure resides in the possibility of insert and delete in the middle of the list
+in O(sqrt(N)). Untill now we can only insert at the end of the list, now will implement the methods =insert-before=
+and =insert-after=
+
+*** code
+#+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp
+(defgeneric insert-before (ill content index))
+
+(defmethod insert-before ((ill indexed-linked-list) (content t) index)
+    (let* ((len (ill-length ill))
+           (sq-len (floor (sqrt len)))
+           (target (get-at ill index))
+           (target-prev (prev target))
+           (last-node (first (last (selected-nodes ill))))
+           (new-node (ill-node content nil nil)))
+           
+
+           (progn      
+              (if (eq index 0)
+                  (progn 
+                     (setf (prev (head ill)) new-node)
+                     (setf (next new-node) (head ill))
+                     (setf (head ill) new-node)
+                     (incf (ill-length ill) 1)) 
+                  (progn
+                     (setf (next target-prev) new-node)
+                     (setf (prev new-node) target-prev)
+                     (setf (next new-node) target)
+                     (setf (prev target) new-node)
+                     (incf (ill-length ill) 1)))
+
+              (if (> (floor (sqrt (ill-length ill))) sq-len)
+                  (update-selected-list-insertion ill (tail ill))))))
+
+
+(defgeneric insert-after (ill content index))
+
+(defmethod insert-after ((ill indexed-linked-list) (content t) index)
+    (let* ((len (ill-length ill))
+           (sq-len (floor (sqrt len)))
+           (target (get-at ill index))
+           (target-next (next target))
+           (last-node (first (last (selected-nodes ill))))
+           (new-node (ill-node content nil nil)))
+                  
+           (progn      
+              (if (eq index (ill-length ill))
+                  (progn 
+                     (setf (next (tail ill)) new-node)
+                     (setf (prev new-node) (tail ill))
+                     (setf (tail ill) new-node)) 
+                  (progn
+                     (setf (prev target-next) new-node)
+                     (setf (next new-node) target-next)
+                     (setf (prev new-node) target)
+                     (setf (next target) new-node)
+                     (incf (ill-length ill) 1)))
+
+              (if (> (floor (sqrt (ill-length ill))) sq-len)
+                  (update-selected-list-insertion ill (tail ill))))))
+#+END_SRC
+
+*** test
+#+BEGIN_SRC lisp +n -r :results output :exports code :tangle src/indexed-linked-list.test.lisp
+(let ((ill (indexed-linked-list 1 2 3)))
+     
+     (progn
+         (format t "~A~%" (mapcar #'content (selected-nodes ill)))
+         (format t "SHOULD BE 2: ~A~%" (content (next (first (selected-nodes ill)))))
+         (insert-after ill 4 1)
+         (format t "~A~%" (mapcar #'content (selected-nodes ill)))
+         (format t "SHOULD BE 4: ~A~%" (content (next (first (selected-nodes ill)))))
+         (insert-before ill 5 3)
+         (format t "~A~%" (mapcar #'content (selected-nodes ill)))
+         (format t "SHOULD BE 5: ~A~%" (content (next (next (first (selected-nodes ill))))))))
+#+END_SRC
+
+#+RESULTS:
+: (1)
+: SHOULD BE 2: 2
+: (2 3)
+: SHOULD BE 4: 4
+: (2 3)
+: SHOULD BE 5: 5
+
+** remove-at
+*** documentation
+Method to remove a node that is in a specific position
+
+*** code
+#+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lip
+(defgeneric remove-at (ill index))
+
+(defmethod remove-at ((ill indexed-linked-list) index)
+    (let* ((target (get-at ill index))
+          (sq-len (floor (sqrt (ill-length ill))))
+          (pos (position target (selected-nodes ill))))
+         (progn
+              (if (not (or (prev target) (next target)))
+                  (progn
+                       (setf (head ill) nil)
+                       (setf (tail ill) nil)
+                       (setf (selected-nodes ill) nil)))
+              (if (prev target)
+                  (setf (next (prev target)) (next target))
+                  (setf (head ill) (next target)))
+              (if (next target)
+                  (setf (prev (next target)) (prev target))
+                  (setf (tail ill) (prev target)))
+              (decf (ill-length ill) 1)
+              (if pos
+                  (map-into (nthcdr pos (selected-nodes ill)) #'next (nthcdr pos (selected-nodes ill))))
+              (if (< (floor (sqrt (ill-length ill))) sq-len)
+                  (update-selected-list-deletion ill)))))
+
+#+END_SRC
+*** test
+#+BEGIN_SRC lisp +n -r :results output :exports code :tangle src/indexed-linked-list.test.lisp
+(let ((ill (indexed-linked-list 1 2 3 4 5)))
+     
+     (progn
+          (format t "SN:~%~A~%" (mapcar #'content (selected-nodes ill)))
+          (remove-at ill 1)
+          (format t "REMOVING 2:~%")
+          (print-ill ill)
+          (format t "SN:~%~A~%" (mapcar #'content (selected-nodes ill)))
+          (remove-at ill 3)
+          (format t "REMOVING 5:~%")
+          (print-ill ill)
+          (format t "SN:~%~A~%" (mapcar #'content (selected-nodes ill)))))
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+SN:
+(2 4)
+REMOVING 2:
+( 1 3 4 5 )
+SN:
+(3 5)
+REMOVING 5:
+( 1 3 4 )
+SN:
+(1)
+#+end_example
+
