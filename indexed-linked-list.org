@@ -18,18 +18,18 @@
 Common lists or arrays are widely used to store data in a sequential fashion that allows us to read that data in constant time.
 But inserting a new piece of data in the middle of the list takes O(N) operations where N is the amount of elements in the list.
 
-Linked list, one the other hand, are made of nodes that contains the pieces of data and a connection to the next node in the list.
+Linked list, on the other hand, are made of nodes that contains the pieces of data and a connection to the next node in the list.
 With this approach we can insert in the middle of the list in constant time (once we have the node we want to insert the new node after),
-but the read operation takes O(N) operations.
+but reading takes O(N) operations.
 
 We want to combine the features of both data structures to make read, delete and insert operations in O(sqrt(N)).
 
 * List node
 
-** documentation
-Part of the structure is a linked list of nodes taht contains data and a reference to the next and previous nodes in the list
+** Documentation
+Part of the structure is a linked list of nodes that contains data and a reference to the next and previous nodes in the list
 
-** code
+** Code
 
 #+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp 
 (defclass ill-node ()
@@ -41,7 +41,7 @@ Part of the structure is a linked list of nodes taht contains data and a referen
    (make-instance 'ill-node  :content content :next next :prev prev))
 #+END_SRC
 
-** test
+** Test
 
 #+BEGIN_SRC lisp +n -r :results output :exports code :tangle src/indexed-linked-list.test.lisp 
 (let ((node1 (il-node 1 nil nil))
@@ -74,11 +74,15 @@ NODE 3:
 #+end_example
 * Indexed Linked List
 
-** documentation
-Now we define the structure. It will be a class the length of the list, a list of selected nodes, a head (first element of the list) and
-a tail (last element of the list). The idea is to select every sqrt(N) node.
+** Documentation
+Now we define the structure. It will be a class with the length of the list, a list of selected nodes, a head (first element of the list) and
+a tail (last element of the list).
+
+The list of selected nodes is used to make the operations quickly. We'll see what is stored in this list when we describe
+the read, insert and delete operations.
+
 We don't define the constructor here, we'll define it once the insert method were defined. 
-** code
+** Code
 
 #+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp
 (defclass indexed-linked-list ()
@@ -88,23 +92,23 @@ We don't define the constructor here, we'll define it once the insert method wer
     (tail :initform nil :accessor tail)))
 #+END_SRC
 * Utils
-** documentation
+** Documentation
 Before implementing the data structure operations (/insert/, /get/, /remove/, etc) we need to implement some methods
 that are used in those operations.
-** second grade positive root
-*** documentation
-In some point we'll need to found the greater integer =K= such that the sum of the first =K= even numbers is smaller
+** Second grade positive root
+*** Documentation
+In some point we'll need to find the greater integer =K= such that the sum of the first =K= even numbers is smaller
 than =A=. The sum of the first =K= even numbers is =K^2 + K= so we'll need to find the positive root of the ecuation
 =K^2 + K - A = 0= and get its integer part. Since =A= is always positive, the positive root of the ecuation is the one
 that has the discriminant with a positive sign.
 
-*** code
+*** Code
 #+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp 
 (defun integer-positive-root (a)
     (let ((K1 (/ (+ -1 (sqrt (+ 1 (* 4 a)))) 2))) 
          (floor K1)))
 #+END_SRC
-*** test
+*** Test
 #+BEGIN_SRC lisp +n -r :results output :exports both :tangle src/indexed-linked-list.test.lisp
 (progn
      (format t "FOR a = 1 sould be 0: ~A~%" (integer-positive-root 1))
@@ -119,12 +123,40 @@ that has the discriminant with a positive sign.
 : FOR a = 7 sould be 2: 2
 : FOR a = 15 sould be 3: 3
 
-** update selected nodes list cause insertion
-*** documentation
-When a new node is inserted and the linked list has a length that have a sqrt greater than the sqrt of the previous
-length is necessary to add a new node in the selected node list and every node in the selected list become in its successor.
+** Update selected nodes list due to insertion
+*** Documentation
+When a new node is inserted at the end of the list and the length of the new list have a integer sqrt greater than the sqrt of the previous
+length is necessary to add a new node in the selected node list and every previous selected node become its successor.
 
-*** code
+Let's stop here to observe what happens with the selected nodes list.
+
+The length of selected nodes will always be =n =  floor(sqrt(N))= where =N= is the number of elements in the actual list.
+
+So, initially the list is empty. When we add the first element we add it to the selected nodes too. When we add the second
+element and the third element we do not modify the selected nodes because =n= remains equal to =1=.
+
+When we add the fourth element we also add it to the selected nodes and we make the previous selected node become its
+successor. So after add the fourth element the selected nodes are =[2, 4]= (i.e the second and the fourth nodes). Note
+that now the selected nodes length is =n = 2= so is the =sqrt(N)=.
+
+Is not hard to show that the distance between the /head/ of the list and the first selected node is =n-1=.
+
+If we take =i= such that =i < n= we can show that the distance between the =i=-th and the =(i+1)=-th
+selected nodes in the real list is =2i=. Is not hard to show that by induction, and
+noting that the distance between the =i=-th and the =(i+1)=-th selected nodes remains invariant no matter the
+value of =n=.
+
+For example, the distance between the first two selected nodes will always be =2=, the distance between the
+second and the third will always be =4=, the distance between the third and the fourth will be =6= and so forth.
+That's because =(n+1)^2 - n^2 = 2n + 1= and when a node is inserted at the end of the list we make all previous
+selected nodes bocome their successors. Thus the previous distances remains invariable and the distance between the
+last two selected nodes will be =2n=.
+
+The point is that the distance between selected nodes is =O(sqrt(N))=.
+
+Is important to note that this insertion we have been talking about is the insertion at the end of the list, not in the
+middle. The insertion in the middle is a bit more complicated and will be explained later.
+*** Code
 #+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp
 (defun update-selected-list-insertion (ill new-node)
    (progn
@@ -133,10 +165,14 @@ length is necessary to add a new node in the selected node list and every node i
                                            `(,new-node)))))
 
 #+END_SRC
-** update selected nodes list cause deletion
-*** documentation
+** Update selected nodes list cause deletion
+*** Documentation
 After removing an element could be necessary update the selected nodes list.
-*** code
+
+When =n= decreases by =1= due to a deletion is necessary to restore the selected nodes to the previous state.
+Before, the =n^2=-th element were inserted.
+
+*** Code
 #+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp
 (defun update-selected-list-deletion (ill)
     (progn
@@ -144,12 +180,11 @@ After removing an element could be necessary update the selected nodes list.
        (if (selected-nodes ill)
            (setf (selected-nodes ill) (mapcar #'prev (selected-nodes ill))))))
 #+END_SRC
-** next and prev N times
-*** documentation
+** Next and prev N times
+*** Documentation
 Sometimes we need to traverse the list making =next= or =prev= operation multiple times from node to node. This is a shortcut
 to make theese operations.
-
-*** code
+*** Code
 #+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp 
 (defun nextn (node n)
     (let ((new-node node))
@@ -166,7 +201,7 @@ to make theese operations.
              new-node))) 
 #+END_SRC
 
-*** test
+*** Test
 #+BEGIN_SRC lisp +n -r :results output :exports both :tangle src/indexed-linked-list.test.lisp 
 (let ((ill (indexed-linked-list 1 2 3 4 5 6)))
          (format t "SHOULD BE 2: ~A~%" (content (prevn (nextn (first (selected-nodes ill)) 3) 3))))
@@ -175,10 +210,10 @@ to make theese operations.
 #+RESULTS:
 : SHOULD BE 2: 2
 
-** print ILL
-*** documentation
+** Print ILL
+*** Documentation
 A method to print ILLs
-*** code
+*** Code
 #+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp 
 (defun print-ill (ill)
     (let ((curr (head ill)))
@@ -191,15 +226,25 @@ A method to print ILLs
 #+END_SRC
 
 * Insert, remove and get methods
-** documentation
-Now we define the insert, remove and get methods for the ILL data structure. All those operations will be done in O(sqrt(N)).
+** Documentation
+Now we define the insert, remove and get methods for the ILL data
+structure. All those operations will be done in =O(sqrt(N))=.
 
-** insert
-*** documentation
-The insert operation has two arguments: the ILL and the data to insert in that ILL. It appends a new node that has the new data as its content and is located at the end of the list.
-We define the constructor of the =indexed-linked-list-class= right after the =insert= method. As we maintain a list with sqrt(N) nodes we must verify that the growth of the list
-maintains the invariant
-*** code
+As we explained in the previous section the length of the selected
+nodes list will always be =floor(sqrt(N))= and the distance between
+selected nodes will be less than or equal to =2*floor(sqrt(N))=. So the
+boundary for runtime operations can be shown without difficulty.
+** Insert
+*** Documentation
+The insert operation has two arguments: the ILL and the data to insert
+in that ILL. It appends a new node that has the new data as its
+content and is located at the end of the list.  We define the
+constructor of the =indexed-linked-list-class= right after the
+=insert= method. As we maintain a list with sqrt(N) nodes we must
+verify that the growth of the list maintains the invariant.
+
+Later we'll explain how to insert in the middle
+*** Code
 #+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp
 (defgeneric insert (ill content))
 
@@ -238,7 +283,7 @@ maintains the invariant
             ill)))
 #+END_SRC
 
-*** test
+*** Test
 
 #+BEGIN_SRC lisp +n -r :results output :exports code :tangle src/indexed-linked-list.test.lisp
 (let ((ill (indexed-linked-list 1 2 3)))
@@ -258,11 +303,28 @@ maintains the invariant
 : 1
 : 3
 : 4
-** get
-*** documentation
-Get method has two two parameters: the list and the index that we want to get from the list. Takes O(sqrt(N)) operations.
-This method return the node in that index, so to get the value you need to do =(content (get-at ill 5))=
-*** code
+** Get
+*** Documentation
+Get method has two two parameters: the list and the index that we want
+to get from the list. Takes O(sqrt(N)) operations.
+
+Do you remember when I said that we'll need to find the integer part
+of the positive root of the equation =K^2 + K - A = 0=?
+
+We need to find the selected node that is nearest to the desire
+node. So we need to find the last selected node that is not after the
+index we are looking for. But the distances between consecutive
+selected nodes are the even numbers!
+
+So if the node is after the first selected node, the solution of the
+equation when =A = desired-index - index-of-the-first-selected-node=
+is the index in the selected nodes list where there is the nearest
+node to the desired node.
+
+If the node is before the first selected node we can reach it from the
+first selected node or from the head of the list
+
+*** Code
 #+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp 
 (defgeneric get-at (ill index))
 
@@ -282,14 +344,14 @@ This method return the node in that index, so to get the value you need to do =(
                    
 #+END_SRC
 
-*** test
+*** Test
 #+BEGIN_SRC lisp +n -r :results output :exports both :tangle src/indexed-linked-list.test.lisp 
 (let ((ill (indexed-linked-list 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17)))
      (progn
-         (format t "SHOULD BE 1: ~A~%"  (content (get-at ill 0)))
-         (format t "SHOULD BE 5: ~A~%"  (content (get-at ill 4)))
-         (format t "SHOULD BE 9: ~A~%"  (content (get-at ill 8)))
-         (format t "SHOULD BE 13: ~A~%" (content  (get-at ill 12)))
+         (format t "SHOULD BE 1: ~A~%"  (content (get-at ill 0))    )
+         (format t "SHOULD BE 5: ~A~%"  (content (get-at ill 4))    )
+         (format t "SHOULD BE 9: ~A~%"  (content (get-at ill 8))    )
+         (format t "SHOULD BE 13: ~A~%" (content  (get-at ill 12))  )
          (format t "SHOULD BE 17: ~A~%" (content  (get-at ill 16)))))
 #+END_SRC
 
@@ -300,13 +362,23 @@ This method return the node in that index, so to get the value you need to do =(
 : SHOULD BE 13: 13
 : SHOULD BE 17: 17
 
-** insert-before and insert-after
-*** documentation
-The power of this data structure resides in the possibility of insert and delete in the middle of the list
-in O(sqrt(N)). Untill now we can only insert at the end of the list, now will implement the methods =insert-before=
-and =insert-after=
+** Insert-before and insert-after
+*** Documentation
+The power of this data structure resides in the possibility of insert
+and delete in the middle of the list in O(sqrt(N)). Untill now we can
+only insert at the end of the list, now will implement the methods
+=insert-before= and =insert-after=
 
-*** code
+These methods receive the ILL, the content of the new node, and the
+index of the reference node (i.e the node we want to insert the new
+one after or before)
+
+These methods are no too different from the regular insertion. We need
+to get the reference node and insert the new one after or before that
+reference. Then we update the selected nodes if necessary. This times
+we do not insert the new node but the tail of the list.
+
+*** Code
 #+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lisp
 (defgeneric insert-before (ill content index))
 
@@ -364,7 +436,7 @@ and =insert-after=
                   (update-selected-list-insertion ill (tail ill))))))
 #+END_SRC
 
-*** test
+*** Test
 #+BEGIN_SRC lisp +n -r :results output :exports code :tangle src/indexed-linked-list.test.lisp
 (let ((ill (indexed-linked-list 1 2 3)))
      
@@ -387,11 +459,20 @@ and =insert-after=
 : (2 3)
 : SHOULD BE 5: 5
 
-** remove-at
-*** documentation
-Method to remove a node that is in a specific position
+** Remove-at
+*** Documentation
+Method to remove a node that is in a specific position.
 
-*** code
+The remaining operation is the deletion. Here we receive an ILL and
+the index of the node to remove. If the removed node were a selected
+node we need to update all selected nodes starting from the removed
+one, and making each one become their successor. We use the Lisp
+built-in function /map-into/ for that purpose.
+
+If the floor of =sqrt(N)= decreased due to the deletion we need to restore
+the selected nodes list.
+
+*** Code
 #+BEGIN_SRC lisp +n -r :results none :exports code :tangle src/indexed-linked-list.lip
 (defgeneric remove-at (ill index))
 
@@ -418,7 +499,7 @@ Method to remove a node that is in a specific position
                   (update-selected-list-deletion ill)))))
 
 #+END_SRC
-*** test
+*** Test
 #+BEGIN_SRC lisp +n -r :results output :exports code :tangle src/indexed-linked-list.test.lisp
 (let ((ill (indexed-linked-list 1 2 3 4 5)))
      
