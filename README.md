@@ -9,6 +9,10 @@ data structure like this in this language motivated me to implement an _indexed-
 this data structure in your no-LISP project you can read the org file and implement the structure by yourself
 using the same idea. Please just mention me in case this project have been helpful.
 
+## Requirements
+
+A Lisp interpreter and some editor like Emacs that allows you to tangle an org file to generate the source code.
+
 ## Setting Up the environment
 
 Once in this directory create a folder with name ```src```. Then open ```indexed-linked-list.org``` file with Emacs.
