@@ -22,6 +22,6 @@ along with a test file that you can ignore.
 ## Documentation
 
 Org files are documentation by themselves. For example, you can export them to pdf or html.
-Any doubt about the data structure use and implementation can be found in the org file.
+Any doubt about the data structure use and implementation can be found in the org file. You can even open it on GitHub and read it in a nice format!
 
 Any contribution and issue report will be very appreciated!
